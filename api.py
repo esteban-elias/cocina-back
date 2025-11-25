@@ -153,3 +153,36 @@ SELECT * FROM product;
         conn.close()
 
 
+@app.get("/ingredients/{user_id}")
+def get_user_ingredients(user_id: int):
+    """
+    Get all ingredients of a user.
+    """
+    conn = get_db_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            # Verify the user exists
+            cursor.execute('SELECT id FROM "user" WHERE id = %s', (user_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail=f"User with id {user_id} not found")
+
+            # Join the ingredient table with the junction table
+            query = """
+            SELECT i.id, i.name 
+            FROM ingredient i
+            JOIN user_ingredient ui ON i.id = ui.ingredient_id
+            WHERE ui.user_id = %s
+            ORDER BY i.name ASC;
+            """
+            
+            cursor.execute(query, (user_id,))
+            user_ingredients = cursor.fetchall()
+
+            return user_ingredients
+
+    except psycopg2.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    finally:
+        conn.close()
+
+
