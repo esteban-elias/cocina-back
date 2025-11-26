@@ -1,3 +1,5 @@
+from dotenv import load_dotenv
+import json
 import os
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -5,6 +7,16 @@ from typing import List, Optional
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from pydantic import BaseModel
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import HumanMessage
+
+
+load_dotenv()
+
+
+class ImageScanRequest(BaseModel):
+    image_url: str
+
 
 app = FastAPI(title="Cocina API", version="1.0.0")
 
@@ -185,4 +197,95 @@ def get_user_ingredients(user_id: int):
     finally:
         conn.close()
 
+
+@app.post("/scan-ingredients")
+def scan_ingredients(request: ImageScanRequest):
+    """
+    Receives an image URL, fetches all known ingredients from the DB,
+    and asks Gemini to identify which of those ingredients appear in the image.
+    """
+    conn = get_db_connection()
+    try:
+        # 1. Fetch the master list of ingredients from the database
+        # We need this context so Gemini maps visual items to YOUR specific IDs.
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute("SELECT id, name FROM ingredient")
+            db_ingredients = cursor.fetchall()
+
+        # Convert to a simplified string/JSON representation for the prompt
+        # Format: "id: name, id: name" to save tokens while keeping the mapping clear
+        ingredients_context = ", ".join([f"{ing['id']}: {ing['name']}" for ing in db_ingredients])
+
+        # 2. Setup Gemini (following your db.py pattern)
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash", # Or gemini-1.5-flash / gemini-2.0-flash-exp
+            temperature=0,
+            max_retries=2,
+            # Ensure you have GOOGLE_API_KEY in your env variables
+        )
+
+        # 3. Construct the Multimodal Prompt
+        # We allow the image_url to be passed directly.
+        message = HumanMessage(
+            content=[
+                {
+                    "type": "text",
+                    "text": f"""
+                    You are a cooking assistant API. 
+                    I will provide a list of valid ingredients from my database (ID: NAME).
+                    
+                    Your task:
+                    1. Analyze the provided image.
+                    2. Identify food ingredients visible in the image.
+                    3. Match them STRICTLY to the provided database list.
+                    4. Ignore any items in the image that do not match a name in the list.
+                    5. Return ONLY a valid JSON list of objects.
+
+                    Database List:
+                    [{ingredients_context}]
+
+                    Output Format required:
+                    [
+                        {{"id": 123, "name": "tomato"}},
+                        {{"id": 456, "name": "onion"}}
+                    ]
+                    
+                    Return ONLY the JSON. No markdown, no explanations.
+                    """
+                },
+                {
+                    "type": "image_url",
+                    "image_url": request.image_url
+                }
+            ]
+        )
+
+        # 4. Invoke LLM
+        response = llm.invoke([message])
+        
+        # 5. Clean and Parse JSON
+        content = response.content.strip()
+        
+        # Remove potential markdown code blocks if the LLM adds them
+        if content.startswith("```json"):
+            content = content.replace("```json", "").replace("```", "")
+        elif content.startswith("```"):
+            content = content.replace("```", "")
+
+        detected_ingredients = json.loads(content)
+
+        return {
+            "status": "success",
+            "detected_count": len(detected_ingredients),
+            "ingredients": detected_ingredients
+        }
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Failed to parse AI response. The model did not return valid JSON.")
+    except psycopg2.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Processing error: {str(e)}")
+    finally:
+        conn.close()
 
