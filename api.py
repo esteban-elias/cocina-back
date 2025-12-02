@@ -297,3 +297,43 @@ async def scan_ingredients(file: UploadFile = File(...)):
         conn.close()
 
 
+@app.post("/ingredients/{user_id}")
+def add_user_ingredients(user_id: int, ingredient_ids: List[int]):
+    """
+    Add ingredients to a user's pantry.
+    """
+    conn = get_db_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            # Verify the user exists
+            cursor.execute('SELECT id FROM "user" WHERE id = %s', (user_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail=f"User with id {user_id} not found")
+
+            # Insert ingredients (ignore duplicates)
+            added_count = 0
+            for ingredient_id in ingredient_ids:
+                cursor.execute(
+                    """
+                    INSERT INTO user_ingredient (user_id, ingredient_id)
+                    VALUES (%s, %s)
+                    ON CONFLICT DO NOTHING;
+                    """,
+                    (user_id, ingredient_id)
+                )
+                if cursor.rowcount > 0:
+                    added_count += 1
+
+            conn.commit()
+
+            return {
+                "status": "success",
+                "added_count": added_count,
+                "total_requested": len(ingredient_ids)
+            }
+
+    except psycopg2.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    finally:
+        conn.close()
+
