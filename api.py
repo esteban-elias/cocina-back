@@ -1,7 +1,8 @@
+import base64
 from dotenv import load_dotenv
 import json
 import os
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, UploadFile, Query
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 import psycopg2
@@ -199,33 +200,40 @@ def get_user_ingredients(user_id: int):
 
 
 @app.post("/scan-ingredients")
-def scan_ingredients(request: ImageScanRequest):
+async def scan_ingredients(file: UploadFile = File(...)):
     """
-    Receives an image URL, fetches all known ingredients from the DB,
+    Receives an image file upload, fetches all known ingredients from the DB,
     and asks Gemini to identify which of those ingredients appear in the image.
     """
     conn = get_db_connection()
     try:
-        # 1. Fetch the master list of ingredients from the database
-        # We need this context so Gemini maps visual items to YOUR specific IDs.
+        # Fetch the master list of ingredients from the database
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute("SELECT id, name FROM ingredient")
             db_ingredients = cursor.fetchall()
 
         # Convert to a simplified string/JSON representation for the prompt
-        # Format: "id: name, id: name" to save tokens while keeping the mapping clear
         ingredients_context = ", ".join([f"{ing['id']}: {ing['name']}" for ing in db_ingredients])
 
-        # 2. Setup Gemini (following your db.py pattern)
+        # Setup LLM
         llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash", # Or gemini-1.5-flash / gemini-2.0-flash-exp
+            model="gemini-2.5-flash",
             temperature=0,
             max_retries=2,
-            # Ensure you have GOOGLE_API_KEY in your env variables
         )
 
-        # 3. Construct the Multimodal Prompt
-        # We allow the image_url to be passed directly.
+        # Read and encode the uploaded file
+        image_data = await file.read()
+        if not image_data:
+            raise HTTPException(status_code=400, detail="Empty or invalid image file")
+
+        # Detect MIME type (e.g., 'jpeg', 'png') from UploadFile
+        content_type = file.content_type.split('/')[-1] if file.content_type else 'jpeg'  # Fallback to jpeg if unknown
+
+        # Base64 encode for inline data URI
+        base64_image = base64.b64encode(image_data).decode('utf-8')
+
+        # Construct the Multimodal Prompt
         message = HumanMessage(
             content=[
                 {
@@ -255,18 +263,17 @@ def scan_ingredients(request: ImageScanRequest):
                 },
                 {
                     "type": "image_url",
-                    "image_url": request.image_url
+                    "image_url": f"data:image/{content_type};base64,{base64_image}"  # NEW: Use base64 data URI
                 }
             ]
         )
 
-        # 4. Invoke LLM
+        # Invoke LLM
         response = llm.invoke([message])
         
-        # 5. Clean and Parse JSON
+        # Clean and Parse JSON
         content = response.content.strip()
         
-        # Remove potential markdown code blocks if the LLM adds them
         if content.startswith("```json"):
             content = content.replace("```json", "").replace("```", "")
         elif content.startswith("```"):
@@ -288,4 +295,5 @@ def scan_ingredients(request: ImageScanRequest):
         raise HTTPException(status_code=500, detail=f"Processing error: {str(e)}")
     finally:
         conn.close()
+
 
