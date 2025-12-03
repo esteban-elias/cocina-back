@@ -21,30 +21,36 @@ class ImageScanRequest(BaseModel):
 
 app = FastAPI(title="Cocina API", version="1.0.0")
 
+allowed_origins = os.getenv("CORS_ALLOW_ORIGINS") or os.getenv("NGROK_TUNNEL_URL") or "*"
+allowed_origins_list = [origin.strip() for origin in allowed_origins.split(",")] if allowed_origins else ["*"]
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify your frontend URL
+    allow_origins=allowed_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Database configuration
+# Database configuration pulled from environment for prod (Render) or local dev
+DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("INTERNAL_DATABASE_URL")
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
+    "port": os.getenv("DB_PORT", 5432),
     "database": os.getenv("DB_NAME", "cocina"),
     "user": os.getenv("DB_USER", "s7"),
     "password": os.getenv("DB_PASSWORD", "123456"),
+    "sslmode": os.getenv("DB_SSLMODE", "require"),
 }
 
 
 def get_db_connection():
     """Create and return a database connection."""
     try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        return conn
+        if DATABASE_URL:
+            return psycopg2.connect(DATABASE_URL, sslmode=DB_CONFIG["sslmode"])
+        return psycopg2.connect(**DB_CONFIG)
     except psycopg2.Error as e:
         raise HTTPException(status_code=500, detail=f"Database connection failed: {str(e)}")
 
