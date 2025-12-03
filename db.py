@@ -58,7 +58,8 @@ def create_tables():
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS ingredient (
                 id SERIAL PRIMARY KEY,
-                name VARCHAR(255) NOT NULL UNIQUE
+                name VARCHAR(255) NOT NULL UNIQUE,
+                img_url TEXT
             );
         """)
 
@@ -88,7 +89,9 @@ def create_tables():
                 name VARCHAR(255) NOT NULL,
                 minutes INTEGER NOT NULL,
                 rating REAL,
-                instructions TEXT NOT NULL
+                instructions TEXT NOT NULL,
+                img_url TEXT,
+                video_url TEXT
             );
         """)
 
@@ -148,9 +151,10 @@ def load_ingredients():
         inserted_count = 0
         for meal in data['meals']:
             ingredient_name = meal['strIngredient']
+            img_url = meal['strThumb']
             cursor.execute(
-                "INSERT INTO ingredient (name) VALUES (%s) ON CONFLICT (name) DO NOTHING;",
-                (ingredient_name,)
+                "INSERT INTO ingredient (name, img_url) VALUES (%s, %s) ON CONFLICT (name) DO NOTHING;",
+                (ingredient_name, img_url)
             )
             if cursor.rowcount > 0:
                 inserted_count += 1
@@ -202,15 +206,17 @@ def load_recipes():
                 minutes = 0  # API doesn't provide cooking time
                 rating = None  # API doesn't provide rating
                 instructions = meal['strInstructions']
+                img_url = meal['strMealThumb']
+                video_url = meal['strYoutube']
 
                 # Insert recipe
                 cursor.execute(
                     """
-                    INSERT INTO recipe (name, minutes, rating, instructions)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO recipe (name, minutes, rating, instructions, img_url, video_url)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     RETURNING id;
                     """,
-                    (recipe_name, minutes, rating, instructions)
+                    (recipe_name, minutes, rating, instructions, img_url, video_url)
                 )
                 recipe_id = cursor.fetchone()[0]
 
