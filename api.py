@@ -85,13 +85,20 @@ WHERE "user".id = %s;
 """
             cursor.execute(query, (user_id,))
             user_ingredients = cursor.fetchall()
-            
+
             # Get all the recipes on the database
             query = """
 SELECT * FROM recipe;
 """
             cursor.execute(query)
             all_recipes = cursor.fetchall()
+
+            # Get all products to attach missing products later
+            query = """
+SELECT * FROM product;
+"""
+            cursor.execute(query)
+            all_products = cursor.fetchall()
 
             # Get all the recipe_ingredient junctions and filter by user
             query = """
@@ -135,6 +142,10 @@ SELECT * FROM recipe_ingredient;
                         missing_ingredients.append(ingredient)
                 recipe['matching_ingredients'] = matching_ingredients
                 recipe['missing_ingredients'] = missing_ingredients
+                missing_ids = {ingredient['id'] for ingredient in missing_ingredients}
+                recipe['missing_products'] = [
+                    product for product in all_products if product.get('ingredient_id') in missing_ids
+                ]
 
             return {
                 'recipes': user_recipes,
@@ -316,4 +327,3 @@ def add_user_ingredients(user_id: int, ingredient_ids: List[int]):
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
     finally:
         conn.close()
-
