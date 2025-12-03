@@ -5,6 +5,7 @@ todo:
 '''
 from dotenv import load_dotenv
 import json
+import os
 import random
 import re
 import requests
@@ -12,20 +13,29 @@ import time
 import psycopg2
 from psycopg2 import OperationalError
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langsmith import traceable
 
 load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("INTERNAL_DATABASE_URL")
+DB_CONFIG = {
+    "host": os.getenv("DB_HOST", "localhost"),
+    "port": os.getenv("DB_PORT", 5432),
+    "database": os.getenv("DB_NAME", "cocina"),
+    "user": os.getenv("DB_USER", "s7"),
+    "password": os.getenv("DB_PASSWORD", "123456"),
+    "sslmode": os.getenv("DB_SSLMODE", "require"),
+}
+
+
+def get_connection():
+    if DATABASE_URL:
+        return psycopg2.connect(DATABASE_URL, sslmode=DB_CONFIG["sslmode"])
+    return psycopg2.connect(**DB_CONFIG)
 
 def test_connection():
     """Test PostgreSQL database connection."""
     try:
-        # Connection parameters
-        connection = psycopg2.connect(
-            host="localhost",
-            database="cocina",
-            user="s7",
-            password="123456"
-        )
+        connection = get_connection()
 
         cursor = connection.cursor()
 
@@ -45,12 +55,7 @@ def test_connection():
 def create_tables():
     """Create database tables for the recipe application."""
     try:
-        connection = psycopg2.connect(
-            host="localhost",
-            database="cocina",
-            user="s7",
-            password="123456"
-        )
+        connection = get_connection()
 
         cursor = connection.cursor()
 
@@ -138,12 +143,7 @@ def load_ingredients():
         data = response.json()
 
         # Connect to database
-        connection = psycopg2.connect(
-            host="localhost",
-            database="cocina",
-            user="s7",
-            password="123456"
-        )
+        connection = get_connection()
 
         cursor = connection.cursor()
 
@@ -175,12 +175,7 @@ def load_recipes():
     """Fetch recipes from TheMealDB API and load into database."""
     try:
         # Connect to database
-        connection = psycopg2.connect(
-            host="localhost",
-            database="cocina",
-            user="s7",
-            password="123456"
-        )
+        connection = get_connection()
 
         cursor = connection.cursor()
 
@@ -262,7 +257,6 @@ def load_recipes():
         print(f"✗ Database error: {e}")
 
 
-@traceable
 def load_products():
     """
     Load products from frutas-y-verduras.md file and match with ingredients using LLM.
@@ -278,12 +272,7 @@ def load_products():
             content = f.read()
 
         # Connect to database
-        connection = psycopg2.connect(
-            host="localhost",
-            database="cocina",
-            user="s7",
-            password="123456"
-        )
+        connection = get_connection()
 
         cursor = connection.cursor()
 
@@ -420,4 +409,3 @@ if __name__ == "__main__":
     # load_ingredients()
     # load_recipes()
     # load_products()
-
