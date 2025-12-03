@@ -5,8 +5,10 @@ todo:
 '''
 from dotenv import load_dotenv
 import json
+import random
 import re
 import requests
+import time
 import psycopg2
 from psycopg2 import OperationalError
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -180,7 +182,7 @@ def load_recipes():
 
         # Load all ingredients into memory
         cursor.execute("SELECT id, name FROM ingredient;")
-        ingredients = {name: id for id, name in cursor.fetchall()}
+        ingredients = {name.strip().lower(): id for id, name in cursor.fetchall()}
 
         # Fetch recipes for each letter
         recipe_count = 0
@@ -216,14 +218,15 @@ def load_recipes():
                 for i in range(1, 21):
                     ingredient = meal.get(f'strIngredient{i}', '')
 
-                    if not ingredient:
+                    ingredient_name = (ingredient or '').strip()
+                    if not ingredient_name:
                         # todo: handle this error
                         continue
 
                     # Get ingredient ID
                     # todo: handle ID not found error
-                    ingredient_name = ingredient.strip()
-                    ingredient_id = ingredients.get(ingredient_name)
+                    ingredient_key = ingredient_name.lower()
+                    ingredient_id = ingredients.get(ingredient_key)
 
                     if ingredient_id:
                         # Insert recipe-ingredient relationship
@@ -239,6 +242,7 @@ def load_recipes():
                 recipe_count += 1
 
             print(f"✓ Processed recipes for letter '{letter}'")
+            time.sleep(1)  # Be polite to the API
 
         connection.commit()
         print(f"✓ Successfully loaded {recipe_count} recipes!")
@@ -248,50 +252,6 @@ def load_recipes():
 
     except requests.RequestException as e:
         print(f"✗ Error fetching data: {e}")
-    except OperationalError as e:
-        print(f"✗ Database error: {e}")
-
-
-def load_users():
-    """Seed user table with dummy data"""
-    try:
-        connection = psycopg2.connect(
-            host="localhost",
-            database="cocina",
-            user="s7",
-            password="123456"
-        )
-
-        cursor = connection.cursor()
-
-        # Create dummy user
-        cursor.execute(
-            """
-            INSERT INTO "user" (name)
-            VALUES (%s)
-            RETURNING id;
-            """,
-            ("alfonso57",)
-        )
-        user_id = cursor.fetchone()[0]
-
-        # Assign ingredients 1-100 to the user
-        for ingredient_id in range(1, 101):
-            cursor.execute(
-                """
-                INSERT INTO user_ingredient (user_id, ingredient_id)
-                VALUES (%s, %s)
-                ON CONFLICT DO NOTHING;
-                """,
-                (user_id, ingredient_id)
-            )
-
-        connection.commit()
-        print(f"✓ Created user with ID {user_id} and assigned 100 ingredients!")
-
-        cursor.close()
-        connection.close()
-
     except OperationalError as e:
         print(f"✗ Database error: {e}")
 
@@ -453,5 +413,5 @@ if __name__ == "__main__":
     # create_tables()
     # load_ingredients()
     # load_recipes()
-    # load_users()
     # load_products()
+
