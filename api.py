@@ -57,9 +57,8 @@ def read_root():
 @app.get("/recipes/{user_id}")
 def get_recipes(user_id: int):
     """
-    Get all the cookable recipes (0 missing ingredient) and almost cookable recipes
-    (1 missing ingredient) for a user
-
+    Get all the recipes whose ingredients match at least 1 user's ingredient.
+    Include matching ingredients and missing ingredients.
     """
     conn = get_db_connection()
     try:
@@ -127,37 +126,18 @@ SELECT * FROM recipe_ingredient;
 
             # Extend user_recipes with its missing ingredients
             for recipe in user_recipes:
-                missing_ingredients = [
-                    ingredient for ingredient in recipe['ingredients'] if ingredient['id'] not in user_ingredients_ids
-                ]
+                matching_ingredients = []
+                missing_ingredients = []
+                for ingredient in recipe['ingredients']:
+                    if ingredient['id'] in user_ingredients_ids:
+                        matching_ingredients.append(ingredient)
+                    else:
+                        missing_ingredients.append(ingredient)
+                recipe['matching_ingredients'] = matching_ingredients
                 recipe['missing_ingredients'] = missing_ingredients
 
-            # Get cookable recipes (0 missing ingredients)
-            cookable_recipes = [
-                recipe for recipe in user_recipes if len(recipe['missing_ingredients']) == 0
-            ]
-            
-            # Get almost cookable recipes (1 missing ingredients)
-            almost_cookable_recipes = [
-                recipe for recipe in user_recipes if len(recipe['missing_ingredients']) == 1
-            ]
-
-
-            # Extend 'missing_ingredients' of almost_cookable_recipes with related products
-            query = """
-SELECT * FROM product;
-"""
-            cursor.execute(query)
-            products = cursor.fetchall()
-
-            for recipe in almost_cookable_recipes:
-                recipe['missing_ingredients'][0]['products'] = [
-                    product for product in products if product['ingredient_id'] == recipe['missing_ingredients'][0]['id']
-                ]
-
             return {
-                'cookable_recipes': cookable_recipes,
-                'almost_cookable_recipes': almost_cookable_recipes,
+                'recipes': user_recipes,
             }
 
     except psycopg2.Error as e:
