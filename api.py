@@ -272,10 +272,31 @@ async def scan_ingredients(file: UploadFile = File(...)):
 
         detected_ingredients = json.loads(content)
 
+        # Extract IDs and fetch full ingredient records (including img_url)
+        detected_ids = [item.get("id") for item in detected_ingredients if item.get("id") is not None]
+
+        if not detected_ids:
+            return {
+                "status": "success",
+                "detected_count": 0,
+                "ingredients": [],
+            }
+
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                """
+                SELECT id, name, img_url
+                FROM ingredient
+                WHERE id = ANY(%s);
+                """,
+                (detected_ids,)
+            )
+            ingredients_with_media = cursor.fetchall()
+
         return {
             "status": "success",
-            "detected_count": len(detected_ingredients),
-            "ingredients": detected_ingredients
+            "detected_count": len(ingredients_with_media),
+            "ingredients": ingredients_with_media
         }
 
     except json.JSONDecodeError:
