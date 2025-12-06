@@ -172,7 +172,7 @@ def get_user_ingredients(user_id: int):
 
             # Join the ingredient table with the junction table
             query = """
-            SELECT i.id, i.name 
+            SELECT i.id, i.name, i.img_url
             FROM ingredient i
             JOIN user_ingredient ui ON i.id = ui.ingredient_id
             WHERE ui.user_id = %s
