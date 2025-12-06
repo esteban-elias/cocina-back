@@ -12,7 +12,6 @@ import time
 import psycopg2
 from psycopg2 import OperationalError
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langsmith import traceable
 
 load_dotenv()
 
@@ -262,7 +261,6 @@ def load_recipes():
         print(f"✗ Database error: {e}")
 
 
-@traceable
 def load_products():
     """
     Load products from frutas-y-verduras.md file and match with ingredients using LLM.
