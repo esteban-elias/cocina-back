@@ -348,3 +348,40 @@ def add_user_ingredients(user_id: int, ingredient_ids: List[int]):
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
     finally:
         conn.close()
+
+
+@app.delete("/ingredients/{user_id}/{ingredient_id}")
+def delete_user_ingredient(user_id: int, ingredient_id: int):
+    """
+    Remove a specific ingredient from a user's pantry.
+    """
+    conn = get_db_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute('SELECT id FROM "user" WHERE id = %s', (user_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail=f"User with id {user_id} not found")
+
+            cursor.execute("SELECT id FROM ingredient WHERE id = %s", (ingredient_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail=f"Ingredient with id {ingredient_id} not found")
+
+            cursor.execute(
+                """
+                DELETE FROM user_ingredient
+                WHERE user_id = %s AND ingredient_id = %s;
+                """,
+                (user_id, ingredient_id)
+            )
+
+            if cursor.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Ingredient not associated with user")
+
+            conn.commit()
+
+            return {"status": "success", "deleted": True, "ingredient_id": ingredient_id}
+
+    except psycopg2.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    finally:
+        conn.close()
