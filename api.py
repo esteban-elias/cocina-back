@@ -54,6 +54,56 @@ def read_root():
     return {"message": "Cocina API - Use /docs for API documentation"}
 
 
+@app.get("/ingredients/all")
+def get_all_ingredients():
+    """
+    Get all ingredients
+    """
+    conn = get_db_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                """
+                SELECT id, name, img_url
+                FROM ingredient
+                """
+            )
+            ingredients = cursor.fetchall()
+            return ingredients
+
+    except psycopg2.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    finally:
+        conn.close()
+
+
+@app.get("/ingredients/basics")
+def get_basic_ingredients():
+    """
+    Get all basics ingredients
+    """
+    basic_ingredients_ids = [30, 260, 309, 282, 249, 276, 341, 187, 183, 303, 36, 236,
+                             125, 3, 112, 197, 150]
+    conn = get_db_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                """
+                SELECT id, name, img_url
+                FROM ingredient
+                WHERE id = ANY(%s)
+                """,
+                (basic_ingredients_ids,)
+            )
+            basic_ingredients = cursor.fetchall()
+            return basic_ingredients
+
+    except psycopg2.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    finally:
+        conn.close()
+
+
 @app.get("/recipes/{user_id}")
 def get_recipes(user_id: int):
     """
