@@ -1,5 +1,6 @@
 import asyncio
 import subprocess
+import time
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
 
 # List of URLs to crawl
@@ -8,9 +9,6 @@ urls = [
     "https://www.jumbo.cl/lacteos-y-quesos",
     "https://www.jumbo.cl/despensa",
     "https://www.jumbo.cl/carnes-y-pescados",
-    "https://www.jumbo.cl/panaderia-y-pasteleria",
-    "https://www.jumbo.cl/licores-bebidas-y-aguas",
-    "https://www.jumbo.cl/chocolates-galletas-y-snacks"
 ]
 
 crawler_conf = CrawlerRunConfig(
@@ -18,17 +16,22 @@ crawler_conf = CrawlerRunConfig(
 )
 
 async def main():
-    async with AsyncWebCrawler() as crawler:
-        result = await crawler.arun(
-            url="https://www.jumbo.cl/frutas-y-verduras",
-            config=crawler_conf
-        )
+    for url in urls:
+        async with AsyncWebCrawler() as crawler:
+            result = await crawler.arun(
+                url=url,
+                config=crawler_conf
+            )
 
-    if (result is None):
-        raise ValueError("Crawl failed")
-    
-    with open("data/frutas-y-verduras.md", "w", encoding="utf-8") as f:
-        f.write(result.markdown)
+        if (result is None):
+            raise ValueError("Crawl failed")
+
+        category = url.split('/')[-1]
+        
+        with open(f"data/{category}.md", "w", encoding="utf-8") as f:
+            f.write(result.markdown)
+        
+        time.sleep(3)
 
 if __name__ == '__main__':
     asyncio.run(main())

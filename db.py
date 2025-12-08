@@ -261,9 +261,10 @@ def load_recipes():
         print(f"✗ Database error: {e}")
 
 
-def load_products():
+def load_products(markdown_file):
     """
     Load products from frutas-y-verduras.md file and match with ingredients using LLM.
+    Example of markdown_file: 'data/frutas-y-verduras.md'
     todo:
      - Handle nullability
      - Proper clean, strips, replace, etc.
@@ -272,7 +273,7 @@ def load_products():
     """
     try:
         # Read the markdown file
-        with open('data/frutas-y-verduras.md', 'r', encoding='utf-8') as f:
+        with open(markdown_file, 'r', encoding='utf-8') as f:
             content = f.read()
 
         # Connect to database
@@ -417,5 +418,5 @@ if __name__ == "__main__":
     # create_tables()
     # load_ingredients()
     # load_recipes()
-    # load_products()
+    # load_products('data/lacteos-y-quesos.md')
 
