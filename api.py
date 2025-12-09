@@ -19,6 +19,11 @@ class ImageScanRequest(BaseModel):
     image_url: str
 
 
+class ProductClickRequest(BaseModel):
+    user_id: int
+    product_id: int
+
+
 app = FastAPI(title="Cocina API", version="1.0.0")
 
 
@@ -235,6 +240,46 @@ def get_user_ingredients(user_id: int):
             return user_ingredients
 
     except psycopg2.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    finally:
+        conn.close()
+
+
+@app.post("/product-clicks")
+def log_product_click(click: ProductClickRequest):
+    """
+    Track when a user taps a product offer.
+    """
+    conn = get_db_connection()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute('SELECT id FROM "user" WHERE id = %s', (click.user_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail=f"User with id {click.user_id} not found")
+
+            cursor.execute("SELECT id FROM product WHERE id = %s", (click.product_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail=f"Product with id {click.product_id} not found")
+
+            cursor.execute(
+                """
+                INSERT INTO product_click (user_id, product_id)
+                VALUES (%s, %s)
+                RETURNING id, created_at;
+                """,
+                (click.user_id, click.product_id),
+            )
+            row = cursor.fetchone()
+            conn.commit()
+
+            return {
+                "status": "success",
+                "click_id": row["id"],
+                "created_at": row["created_at"],
+            }
+
+    except psycopg2.Error as e:
+        conn.rollback()
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
     finally:
         conn.close()

@@ -117,6 +117,18 @@ def create_tables():
             );
         """)
 
+        # Create product_click table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS product_click (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                product_id INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES "user"(id) ON DELETE CASCADE,
+                FOREIGN KEY (product_id) REFERENCES product(id) ON DELETE CASCADE
+            );
+        """)
+
         connection.commit()
         print("✓ Tables created successfully!")
 
@@ -419,4 +431,3 @@ if __name__ == "__main__":
     # load_ingredients()
     # load_recipes()
     # load_products('data/lacteos-y-quesos.md')
-
