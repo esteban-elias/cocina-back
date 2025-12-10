@@ -66,7 +66,8 @@ def create_tables():
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS "user" (
                 id SERIAL PRIMARY KEY,
-                name VARCHAR(255) NOT NULL UNIQUE
+                name VARCHAR(255) NOT NULL UNIQUE,
+                device_id TEXT UNIQUE
             );
         """)
 

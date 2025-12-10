@@ -20,7 +20,7 @@ class ImageScanRequest(BaseModel):
 
 
 class ProductClickRequest(BaseModel):
-    user_id: int
+    device_id: str
     product_id: int
 
 
@@ -52,6 +52,24 @@ def get_db_connection():
         return conn
     except psycopg2.Error as e:
         raise HTTPException(status_code=500, detail=f"Database connection failed: {str(e)}")
+
+
+def get_or_create_user_id(conn, cursor, device_id: str) -> int:
+    """
+    Look up a user by device_id; create one if it does not exist.
+    """
+    cursor.execute('SELECT id FROM "user" WHERE device_id = %s', (device_id,))
+    existing = cursor.fetchone()
+    if existing:
+        return existing["id"]
+
+    cursor.execute(
+        'INSERT INTO "user" (name, device_id) VALUES (%s, %s) RETURNING id;',
+        (device_id, device_id),
+    )
+    new_user = cursor.fetchone()
+    conn.commit()
+    return new_user["id"]
 
 
 @app.get("/")
@@ -109,8 +127,8 @@ def get_basic_ingredients():
         conn.close()
 
 
-@app.get("/recipes/{user_id}")
-def get_recipes(user_id: int):
+@app.get("/recipes/{device_id}")
+def get_recipes(device_id: str):
     """
     Get all the recipes whose ingredients match at least 1 user's ingredient.
     Include matching ingredients and missing ingredients.
@@ -118,11 +136,7 @@ def get_recipes(user_id: int):
     conn = get_db_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            # First, verify the user exists
-            cursor.execute('SELECT id, name FROM "user" WHERE id = %s', (user_id,))
-            user = cursor.fetchone()
-            if not user:
-                raise HTTPException(status_code=404, detail=f"User with id {user_id} not found")
+            user_id = get_or_create_user_id(conn, cursor, device_id)
 
             # Get all ingredients on database
             query = """
@@ -212,18 +226,15 @@ SELECT * FROM recipe_ingredient;
         conn.close()
 
 
-@app.get("/ingredients/{user_id}")
-def get_user_ingredients(user_id: int):
+@app.get("/ingredients/{device_id}")
+def get_user_ingredients(device_id: str):
     """
     Get all ingredients of a user.
     """
     conn = get_db_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            # Verify the user exists
-            cursor.execute('SELECT id FROM "user" WHERE id = %s', (user_id,))
-            if not cursor.fetchone():
-                raise HTTPException(status_code=404, detail=f"User with id {user_id} not found")
+            user_id = get_or_create_user_id(conn, cursor, device_id)
 
             # Join the ingredient table with the junction table
             query = """
@@ -253,9 +264,7 @@ def log_product_click(click: ProductClickRequest):
     conn = get_db_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute('SELECT id FROM "user" WHERE id = %s', (click.user_id,))
-            if not cursor.fetchone():
-                raise HTTPException(status_code=404, detail=f"User with id {click.user_id} not found")
+            user_id = get_or_create_user_id(conn, cursor, click.device_id)
 
             cursor.execute("SELECT id FROM product WHERE id = %s", (click.product_id,))
             if not cursor.fetchone():
@@ -267,7 +276,7 @@ def log_product_click(click: ProductClickRequest):
                 VALUES (%s, %s)
                 RETURNING id, created_at;
                 """,
-                (click.user_id, click.product_id),
+                (user_id, click.product_id),
             )
             row = cursor.fetchone()
             conn.commit()
@@ -404,18 +413,15 @@ async def scan_ingredients(file: UploadFile = File(...)):
         conn.close()
 
 
-@app.post("/ingredients/{user_id}")
-def add_user_ingredients(user_id: int, ingredient_ids: List[int]):
+@app.post("/ingredients/{device_id}")
+def add_user_ingredients(device_id: str, ingredient_ids: List[int]):
     """
     Add ingredients to a user's pantry.
     """
     conn = get_db_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            # Verify the user exists
-            cursor.execute('SELECT id FROM "user" WHERE id = %s', (user_id,))
-            if not cursor.fetchone():
-                raise HTTPException(status_code=404, detail=f"User with id {user_id} not found")
+            user_id = get_or_create_user_id(conn, cursor, device_id)
 
             # Insert ingredients (ignore duplicates)
             added_count = 0
@@ -445,17 +451,15 @@ def add_user_ingredients(user_id: int, ingredient_ids: List[int]):
         conn.close()
 
 
-@app.delete("/ingredients/{user_id}/{ingredient_id}")
-def delete_user_ingredient(user_id: int, ingredient_id: int):
+@app.delete("/ingredients/{device_id}/{ingredient_id}")
+def delete_user_ingredient(device_id: str, ingredient_id: int):
     """
     Remove a specific ingredient from a user's pantry.
     """
     conn = get_db_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute('SELECT id FROM "user" WHERE id = %s', (user_id,))
-            if not cursor.fetchone():
-                raise HTTPException(status_code=404, detail=f"User with id {user_id} not found")
+            user_id = get_or_create_user_id(conn, cursor, device_id)
 
             cursor.execute("SELECT id FROM ingredient WHERE id = %s", (ingredient_id,))
             if not cursor.fetchone():
