@@ -781,6 +781,112 @@ def translate_recipe_instructions():
         print(f"✗ Error: {e}")
 
 
+def load_more_recipes():
+    """
+    Insert a curated set of quick recipes that can be cooked with the basic ingredients list.
+    Existing recipes (matched by name) are reused, and recipe_ingredient links are upserted.
+    """
+    basic_recipes = [
+        {
+            "name": "Spaghetti Aglio e Olio",
+            "minutes": 15,
+            "img_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e9/Spaghetti_di_Gragnano_e_colatura_di_alici.jpg/250px-Spaghetti_di_Gragnano_e_colatura_di_alici.jpg",
+            "video_url": "https://www.youtube.com/watch?v=tHXlfuQc_A8",
+            "instructions": "Boil spaghetti in salted water until al dente. While pasta cooks, peel and thinly slice the garlic. In a pan, heat vegetable oil over medium heat and sauté the garlic until golden. Transfer the drained pasta to the pan, add a splash of pasta water, and toss vigorously to coat. Salt to taste.",
+            "instructions_es": "Hervir los espaguetis en agua con sal hasta que estén al dente. Mientras se cocina la pasta, pelar y cortar el ajo en láminas finas. En una sartén, calentar aceite vegetal a fuego medio y saltear el ajo hasta que esté dorado. Pasar la pasta escurrida a la sartén, añadir un poco de agua de la cocción y mezclar vigorosamente. Salar al gusto.",
+            "ingredient_ids": [276, 137, 303, 260, 309],
+        },
+        {
+            "name": "Classic French Toast",
+            "minutes": 10,
+            "img_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/4/42/FrenchToast.JPG/250px-FrenchToast.JPG",
+            "video_url": "https://www.youtube.com/watch?v=Z9JEIIQDdEg",
+            "instructions": "Whisk eggs, milk, and sugar in a bowl. Heat butter in a frying pan over medium heat. Dip slices of bread into the mixture, coating both sides. Fry the bread in the butter until golden brown on both sides. Serve warm.",
+            "instructions_es": "Batir los huevos, la leche y el azúcar en un bol. Calentar mantequilla en una sartén a fuego medio. Mojar las rebanadas de pan en la mezcla, cubriendo ambos lados. Freír el pan en la mantequilla hasta que esté dorado por ambos lados. Servir caliente.",
+            "ingredient_ids": [112, 197, 282, 36, 30],
+        },
+        {
+            "name": "Creamy Mashed Potatoes",
+            "minutes": 25,
+            "img_url": "https://upload.wikimedia.org/wikipedia/commons/5/51/Sous_vide_mashed_potatoes.jpg",
+            "video_url": "https://www.youtube.com/watch?v=HfdFlenF6XI",
+            "instructions": "Peel and cut potatoes into chunks. Boil in salted water until soft (about 20 mins). Drain well. Mash the potatoes while hot, adding butter and milk gradually until you reach a creamy consistency. Season with salt.",
+            "instructions_es": "Pelar y cortar las patatas en trozos. Hervir en agua con sal hasta que estén blandas (unos 20 min). Escurrir bien. Machacar las patatas en caliente, añadiendo mantequilla y leche poco a poco hasta conseguir una consistencia cremosa. Sazonar con sal.",
+            "ingredient_ids": [236, 36, 197, 260, 309],
+        },
+        {
+            "name": "Rice Pudding (Arroz con Leche)",
+            "minutes": 45,
+            "img_url": "https://upload.wikimedia.org/wikipedia/commons/b/ba/Arroz_con_leche.png",
+            "video_url": "https://www.youtube.com/watch?v=IS6vvbGRH5w",
+            "instructions": "Cook rice in water over medium heat until water is absorbed. Add milk, sugar, and a strip of lemon peel. Simmer on low heat, stirring frequently, until rice is very soft and the mixture thickens (approx 30 mins). Remove lemon peel before serving.",
+            "instructions_es": "Cocinar el arroz en agua a fuego medio hasta que se absorba el agua. Añadir leche, azúcar y una tira de cáscara de limón. Cocinar a fuego lento, removiendo frecuentemente, hasta que el arroz esté muy blando y la mezcla espese (aprox. 30 min). Retirar la cáscara de limón antes de servir.",
+            "ingredient_ids": [249, 197, 282, 183, 309],
+        },
+    ]
+
+    try:
+        connection = psycopg2.connect(
+            host="localhost",
+            database="cocina",
+            user="s7",
+            password="123456"
+        )
+        cursor = connection.cursor()
+
+        inserted_recipes = 0
+        linked_ingredients = 0
+
+        for recipe in basic_recipes:
+            cursor.execute("SELECT id FROM recipe WHERE name = %s;", (recipe["name"],))
+            row = cursor.fetchone()
+
+            if row:
+                recipe_id = row[0]
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO recipe (name, minutes, rating, instructions, instructions_es, img_url, video_url)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id;
+                    """,
+                    (
+                        recipe["name"],
+                        recipe["minutes"],
+                        None,
+                        recipe["instructions"],
+                        recipe["instructions_es"],
+                        recipe["img_url"],
+                        recipe["video_url"],
+                    ),
+                )
+                recipe_id = cursor.fetchone()[0]
+                inserted_recipes += 1
+
+            for ingredient_id in recipe["ingredient_ids"]:
+                cursor.execute(
+                    """
+                    INSERT INTO recipe_ingredient (recipe_id, ingredient_id)
+                    VALUES (%s, %s)
+                    ON CONFLICT DO NOTHING;
+                    """,
+                    (recipe_id, ingredient_id),
+                )
+                if cursor.rowcount > 0:
+                    linked_ingredients += 1
+
+        connection.commit()
+        print(f"✓ Added {inserted_recipes} new recipes and {linked_ingredients} recipe-ingredient links.")
+
+        cursor.close()
+        connection.close()
+
+    except OperationalError as e:
+        print(f"✗ Database error: {e}")
+    except Exception as e:
+        print(f"✗ Error: {e}")
+
+
 if __name__ == "__main__":
     # test_connection()
     # create_tables()
@@ -791,3 +897,4 @@ if __name__ == "__main__":
     # translate_recipe_names()
     # translate_ingredient_names()
     # translate_recipe_instructions()
+    # load_more_recipes()

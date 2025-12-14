@@ -105,8 +105,8 @@ def get_basic_ingredients():
     """
     Get all basics ingredients
     """
-    basic_ingredients_ids = [30, 260, 309, 282, 249, 276, 341, 187, 183, 303, 36, 236,
-                             125, 3, 112, 197, 150, 137]
+    basic_ingredients_ids = [30, 260, 309, 282, 249, 276, 187, 183, 303, 36, 236,
+                             125, 112, 197, 137]
     conn = get_db_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
