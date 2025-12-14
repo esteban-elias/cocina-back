@@ -58,6 +58,7 @@ def create_tables():
             CREATE TABLE IF NOT EXISTS ingredient (
                 id SERIAL PRIMARY KEY,
                 name VARCHAR(255) NOT NULL UNIQUE,
+                name_es VARCHAR(255),
                 img_url TEXT
             );
         """)
@@ -87,9 +88,11 @@ def create_tables():
             CREATE TABLE IF NOT EXISTS recipe (
                 id SERIAL PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
+                name_es VARCHAR(255),
                 minutes INTEGER NOT NULL,
                 rating REAL,
                 instructions TEXT NOT NULL,
+                instructions_es TEXT,
                 img_url TEXT,
                 video_url TEXT
             );
@@ -426,9 +429,365 @@ def load_products(markdown_file):
         return {'status': 'error', 'error': error_msg}
 
 
+def merge_ingredients():
+    """Merge duplicate ingredient names into their canonical entries."""
+    replacements = {
+        "Egg": "Eggs",
+        "Onion": "Onions",
+        "Oil": "Vegetable Oil",
+        "Plain Flour": "Flour",
+        "White Flour": "Flour",
+        "All purpose flour": "Flour",
+    }
+
+    try:
+        connection = psycopg2.connect(
+            host="localhost",
+            database="cocina",
+            user="s7",
+            password="123456"
+        )
+
+        cursor = connection.cursor()
+
+        cursor.execute("SELECT id, name FROM ingredient;")
+        ingredients = {name.lower(): id for id, name in cursor.fetchall()}
+
+        for source, target in replacements.items():
+            source_id = ingredients.get(source.lower())
+            target_id = ingredients.get(target.lower())
+
+            if not source_id:
+                print(f"⚠ Skipping '{source}' -> '{target}': source not found")
+                continue
+
+            if not target_id:
+                print(f"⚠ Skipping '{source}' -> '{target}': target not found")
+                continue
+
+            cursor.execute(
+                """
+                INSERT INTO recipe_ingredient (recipe_id, ingredient_id)
+                SELECT recipe_id, %s FROM recipe_ingredient WHERE ingredient_id = %s
+                ON CONFLICT DO NOTHING;
+                """,
+                (target_id, source_id)
+            )
+
+            cursor.execute(
+                """
+                INSERT INTO user_ingredient (user_id, ingredient_id)
+                SELECT user_id, %s FROM user_ingredient WHERE ingredient_id = %s
+                ON CONFLICT DO NOTHING;
+                """,
+                (target_id, source_id)
+            )
+
+            cursor.execute(
+                """
+                UPDATE product
+                SET ingredient_id = %s
+                WHERE ingredient_id = %s;
+                """,
+                (target_id, source_id)
+            )
+
+            cursor.execute("DELETE FROM ingredient WHERE id = %s;", (source_id,))
+            print(f"✓ Merged '{source}' into '{target}'")
+
+        connection.commit()
+        print("✓ Ingredient unification complete!")
+
+        cursor.close()
+        connection.close()
+
+    except OperationalError as e:
+        print(f"✗ Database error: {e}")
+    except Exception as e:
+        print(f"✗ Error: {e}")
+
+
+def translate_recipe_names():
+    """Translate recipe names to Spanish and store them in name_es."""
+    try:
+        connection = psycopg2.connect(
+            host="localhost",
+            database="cocina",
+            user="s7",
+            password="123456"
+        )
+
+        cursor = connection.cursor()
+
+        cursor.execute(
+            """
+            ALTER TABLE recipe
+            ADD COLUMN IF NOT EXISTS name_es VARCHAR(255);
+            """
+        )
+
+        cursor.execute(
+            """
+            SELECT id, name
+            FROM recipe
+            WHERE name_es IS NULL OR name_es = '';
+            """
+        )
+        rows = cursor.fetchall()
+
+        if not rows:
+            print("✓ No recipes pending translation")
+            cursor.close()
+            connection.close()
+            return
+
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash-lite",
+            temperature=0,
+            timeout=180,
+            max_retries=3,
+        )
+
+        batch_size = 100
+        translated_count = 0
+
+        for start in range(0, len(rows), batch_size):
+            batch = rows[start:start + batch_size]
+            payload = [{"id": row[0], "name": (row[1] or "").strip()} for row in batch if (row[1] or "").strip()]
+
+            messages = [
+                (
+                    "system",
+                    'Translate to Spanish. Return JSON like [{"id":1,"name_es":"..."}]. Nothing else.',
+                ),
+                (
+                    "human",
+                    json.dumps(payload, separators=(",", ":"))
+                ),
+            ]
+
+            ai_msg = llm.invoke(messages)
+            content = ai_msg.content.strip()
+            if content.startswith("```json"):
+                content = content.replace("```json", "").replace("```", "").strip()
+            elif content.startswith("```"):
+                content = content.replace("```", "").strip()
+
+            translations = json.loads(content)
+
+            for item in translations:
+                cursor.execute(
+                    "UPDATE recipe SET name_es = %s WHERE id = %s;",
+                    ((item.get("name_es") or "").strip(), item.get("id"))
+                )
+                if cursor.rowcount > 0:
+                    translated_count += 1
+
+            connection.commit()
+            print(f"✓ Translated {len(translations)} recipe names")
+
+        cursor.close()
+        connection.close()
+        print(f"✓ Completed recipe name translations: {translated_count} updates")
+
+    except json.JSONDecodeError as e:
+        print(f"✗ Error parsing LLM response: {e}")
+    except OperationalError as e:
+        print(f"✗ Database error: {e}")
+    except Exception as e:
+        print(f"✗ Error: {e}")
+
+
+def translate_ingredient_names():
+    """Translate ingredient names to Spanish and store them in name_es."""
+    try:
+        connection = psycopg2.connect(
+            host="localhost",
+            database="cocina",
+            user="s7",
+            password="123456"
+        )
+
+        cursor = connection.cursor()
+
+        cursor.execute(
+            """
+            ALTER TABLE ingredient
+            ADD COLUMN IF NOT EXISTS name_es VARCHAR(255);
+            """
+        )
+
+        cursor.execute(
+            """
+            SELECT id, name
+            FROM ingredient
+            WHERE name_es IS NULL OR name_es = '';
+            """
+        )
+        rows = cursor.fetchall()
+
+        if not rows:
+            print("✓ No ingredients pending translation")
+            cursor.close()
+            connection.close()
+            return
+
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash-lite",
+            temperature=0,
+            timeout=180,
+            max_retries=3,
+        )
+
+        batch_size = 100
+        translated_count = 0
+
+        for start in range(0, len(rows), batch_size):
+            batch = rows[start:start + batch_size]
+            payload = [{"id": row[0], "name": (row[1] or "").strip()} for row in batch if (row[1] or "").strip()]
+
+            messages = [
+                (
+                    "system",
+                    'Translate ingredient names to Spanish. Return JSON like [{"id":1,"name_es":"..."}]. Nothing else.',
+                ),
+                (
+                    "human",
+                    json.dumps(payload, separators=(",", ":"))
+                ),
+            ]
+
+            ai_msg = llm.invoke(messages)
+            content = ai_msg.content.strip()
+            if content.startswith("```json"):
+                content = content.replace("```json", "").replace("```", "").strip()
+            elif content.startswith("```"):
+                content = content.replace("```", "").strip()
+
+            translations = json.loads(content)
+
+            for item in translations:
+                cursor.execute(
+                    "UPDATE ingredient SET name_es = %s WHERE id = %s;",
+                    ((item.get("name_es") or "").strip(), item.get("id"))
+                )
+                if cursor.rowcount > 0:
+                    translated_count += 1
+
+            connection.commit()
+            print(f"✓ Translated {len(translations)} ingredients")
+
+        cursor.close()
+        connection.close()
+        print(f"✓ Completed ingredient translations: {translated_count} updates")
+
+    except json.JSONDecodeError as e:
+        print(f"✗ Error parsing LLM response: {e}")
+    except OperationalError as e:
+        print(f"✗ Database error: {e}")
+    except Exception as e:
+        print(f"✗ Error: {e}")
+
+
+def translate_recipe_instructions():
+    """Translate recipe instructions to Spanish and store them in instructions_es."""
+    try:
+        connection = psycopg2.connect(
+            host="localhost",
+            database="cocina",
+            user="s7",
+            password="123456"
+        )
+
+        cursor = connection.cursor()
+
+        cursor.execute(
+            """
+            ALTER TABLE recipe
+            ADD COLUMN IF NOT EXISTS instructions_es TEXT;
+            """
+        )
+
+        cursor.execute(
+            """
+            SELECT id, instructions
+            FROM recipe
+            WHERE (instructions_es IS NULL OR instructions_es = '')
+              AND instructions IS NOT NULL;
+            """
+        )
+        rows = cursor.fetchall()
+
+        if not rows:
+            print("✓ No recipe instructions pending translation")
+            cursor.close()
+            connection.close()
+            return
+
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash-lite",
+            temperature=0,
+            timeout=240,
+            max_retries=3,
+        )
+
+        batch_size = 10
+        translated_count = 0
+
+        for start in range(0, len(rows), batch_size):
+            batch = rows[start:start + batch_size]
+            payload = [{"id": row[0], "instructions": (row[1] or "").strip()} for row in batch if (row[1] or "").strip()]
+
+            messages = [
+                (
+                    "system",
+                    'Translate recipe instructions to Spanish, keep steps/formatting. Return JSON like [{"id":1,"instructions_es":"..."}]. Nothing else.',
+                ),
+                (
+                    "human",
+                    json.dumps(payload, separators=(",", ":"))
+                ),
+            ]
+
+            ai_msg = llm.invoke(messages)
+            content = ai_msg.content.strip()
+            if content.startswith("```json"):
+                content = content.replace("```json", "").replace("```", "").strip()
+            elif content.startswith("```"):
+                content = content.replace("```", "").strip()
+
+            translations = json.loads(content)
+
+            for item in translations:
+                cursor.execute(
+                    "UPDATE recipe SET instructions_es = %s WHERE id = %s;",
+                    ((item.get("instructions_es") or "").strip(), item.get("id"))
+                )
+                if cursor.rowcount > 0:
+                    translated_count += 1
+
+            connection.commit()
+            print(f"✓ Translated instructions for {len(translations)} recipes")
+
+        cursor.close()
+        connection.close()
+        print(f"✓ Completed instruction translations: {translated_count} updates")
+
+    except json.JSONDecodeError as e:
+        print(f"✗ Error parsing LLM response: {e}")
+    except OperationalError as e:
+        print(f"✗ Database error: {e}")
+    except Exception as e:
+        print(f"✗ Error: {e}")
+
+
 if __name__ == "__main__":
     # test_connection()
     # create_tables()
     # load_ingredients()
     # load_recipes()
     # load_products('data/lacteos-y-quesos.md')
+    # merge_ingredients()
+    # translate_recipe_names()
+    # translate_ingredient_names()
+    # translate_recipe_instructions()

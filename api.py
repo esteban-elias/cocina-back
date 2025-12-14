@@ -87,7 +87,7 @@ def get_all_ingredients():
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(
                 """
-                SELECT id, name, img_url
+                SELECT id, name, name_es, img_url
                 FROM ingredient
                 """
             )
@@ -106,13 +106,13 @@ def get_basic_ingredients():
     Get all basics ingredients
     """
     basic_ingredients_ids = [30, 260, 309, 282, 249, 276, 341, 187, 183, 303, 36, 236,
-                             125, 3, 112, 197, 150]
+                             125, 3, 112, 197, 150, 137]
     conn = get_db_connection()
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(
                 """
-                SELECT id, name, img_url
+                SELECT id, name, name_es, img_url
                 FROM ingredient
                 WHERE id = ANY(%s)
                 """,
@@ -238,7 +238,7 @@ def get_user_ingredients(device_id: str):
 
             # Join the ingredient table with the junction table
             query = """
-            SELECT i.id, i.name, i.img_url
+            SELECT i.id, i.name, i.name_es, i.img_url
             FROM ingredient i
             JOIN user_ingredient ui ON i.id = ui.ingredient_id
             WHERE ui.user_id = %s
@@ -304,7 +304,7 @@ async def scan_ingredients(file: UploadFile = File(...)):
     try:
         # Fetch the master list of ingredients from the database
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute("SELECT id, name FROM ingredient")
+            cursor.execute("SELECT id, name, name_es FROM ingredient")
             db_ingredients = cursor.fetchall()
 
         # Convert to a simplified string/JSON representation for the prompt
@@ -389,7 +389,7 @@ async def scan_ingredients(file: UploadFile = File(...)):
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(
                 """
-                SELECT id, name, img_url
+                SELECT id, name, name_es, img_url
                 FROM ingredient
                 WHERE id = ANY(%s);
                 """,
