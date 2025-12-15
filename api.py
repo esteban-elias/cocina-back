@@ -44,12 +44,17 @@ DB_CONFIG = {
     "password": os.getenv("DB_PASSWORD", "123456"),
 }
 
+DATABASE_URL = os.getenv("DATABASE_URL")
+
 
 def get_db_connection():
     """Create and return a database connection."""
     try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        return conn
+        if DATABASE_URL:
+            # Render provides a single DATABASE_URL; sslmode=require is needed for managed Postgres
+            return psycopg2.connect(DATABASE_URL, sslmode="require")
+
+        return psycopg2.connect(**DB_CONFIG)
     except psycopg2.Error as e:
         raise HTTPException(status_code=500, detail=f"Database connection failed: {str(e)}")
 
